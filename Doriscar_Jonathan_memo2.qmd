@@ -1,0 +1,335 @@
+---
+title: "Doriscar_Jonathan_project2_memo"
+format: html
+editor: visual
+repository: https://github.com/stat301-1-2023-fall/L11-functions-iteration-jedoriscar.git
+
+toc: true
+embed-resources: true
+code-fold: show
+link-external-newwindow: true
+
+execute:
+  warning: false
+  
+from: markdown+emoji 
+---
+
+```{r Loading Packages}
+library(stm)
+library(tm)
+library(dplyr)
+library(readr)
+library(tibble)
+library(readxl)
+library(ggplot2)
+library(wordcloud)
+library(tidytext)
+library(lubridate)
+options(scipen = 100)
+```
+
+```{r Loading data}
+yt_dt <- read.csv("~/Documents/stat 302-1/Final-project-memo-2/youtube_data.csv")
+```
+
+## Objective 2
+
+Students are expected to demonstrate that significant progress has been made on their final project since the submission of progress memo 1. Students should have their data cleaned and the EDA should be started.
+
+Demonstrating significant progress means students should have some uni variate and bivariate analyses complete for several of their variables. They should share a few graphics and/or tables with a description of what they have found thus far to demonstrate they progress. Students should should clearly state what they are exploring and why in these demonstrations. That is, they should share the guiding curiosity or research question that accompanies the particular graphics and/or tables they choose to share.
+
+## Solution
+
+# Familiarizing myself with the distributions of my data set and the nature of the variables.
+
+```{r}
+glimpse(yt_dt)
+```
+
+I am familiarizing myself with the nature of the data set to get an idea of the structure of each of my variables.
+
+```{r seeing which channels have the most subscribers}
+yt_dt %>%
+  group_by(channel_title) %>%
+  summarise(n = n(), total_subscribers = sum(subscribers)) %>%
+  arrange(desc(total_subscribers))
+```
+
+```{r seeing which channels have posted the msot videos}
+yt_dt %>%
+  group_by(channel_title) %>%
+  summarise(distinct_videos = n_distinct(video_title),
+            total_subscribers = sum(subscribers)) %>%
+  arrange(desc(distinct_videos))
+```
+
+```{r seeeing the videos with the most likes}
+yt_dt %>% 
+  group_by(video_title) %>% 
+  summarise(n = n(), total_likes = sum(likes)) %>%
+  arrange(desc(total_likes))
+```
+
+```{r seeeing the videos with the most comments}
+yt_dt %>%
+  group_by(video_title) %>%
+  summarise(n = n(), total_comments = sum(comment_count)) %>%
+  arrange(desc(total_comments))
+```
+
+"Cop Caught Arresting the Wrong Man in Racial Profiling Incident \| NowThis" is the video with the most comments and likes. As we continue through data analysis we should consider this video as it seems to video that is driving a lot of engagement. Also interesting of the top 5 channels in terms of subscriber count, the first three are news channels which is interesting for thinking about political affiliation of the accounts posting these videos and how that might be related to commenter political affiliation (i.e., almost as a proxy). I am also able to see with the code above which channels have posted the most videos in our data set, "TYT Sports" is atop the list with 8. This channel should be further investigated as most videos are below 5.
+
+```{r seeing the comments with the most replies}
+yt_dt %>%
+  group_by(comment) %>%
+  summarise(n = n(), comment_replies = sum(replies)) %>%
+  arrange(desc(comment_replies))
+```
+
+```{r seeing which users have the most comments and how many distinct videos they commented on}
+yt_dt <- yt_dt %>%
+  group_by(username) %>%
+  mutate(distinct_videos_commented = n_distinct(video_title),
+         comment_total_username = n()) %>%
+  arrange(desc(comment_total_username)) 
+```
+
+```{r seeing the people who made the most distinct comments}
+yt_dt %>%
+  group_by(username) %>%
+  summarise(distinct_comments = n_distinct(comment),
+            total_comments = n()) %>%
+  arrange(desc(distinct_comments))
+
+```
+
+The code that I have ran above allows me to see how many comments each user has commented, and it allows me to see the number of distinct videos that they commented on. For example, John has commented the most of any user and also seems to have commented on more videos than any other user. As I conduct analyses and calculate comment sentiment, this user is someone to keep in mind as they might also be one of the biggest drivers of negative sentiment. Generally it seems that for the most part, total_comments and distinct_comments are related such that as total comments rises so does distinct comments.
+
+```{r seeing which comments received the most likes}
+yt_dt %>%
+  group_by(comment) %>%
+  summarise(n = n(), comment_likes = sum(likes)) %>%
+  arrange(desc(comment_likes))
+```
+
+```{r seeing the most liked comments on each video}
+yt_dt %>%
+  group_by(username) %>%
+  top_n(1, wt = likes) %>%
+  summarize(most_likes = max(likes),
+            most_liked_comment = first(comment),
+            most_likes_replies = max(replies),
+            video_title = first(video_title)) %>%
+  arrange(desc(most_likes))
+```
+
+This code allows me to see which comments across the entire data set are receiving the most likes and replies. The video "Police brutality (Favorite parts Shrek 2)" has 6 of the top 10 most liked comments suggesting that there is something interesting going on with this video. As I go back and watch the video, this makes sense as it is a really funny video that it supposed to be satire about the way that people engage with police brutality. This makes me realize that some of the videos in this data set are not police brutality per say, but they are about police brutality which is something to consider in the data analysis process.
+
+Time Descriptives:
+
+```{r seeing which vidoes are the oldest}
+ yt_dt %>%
+  mutate(video_published_at = as.POSIXct(video_published_at, format = "%Y-%m-%d %H:%M:%S")) %>%
+  arrange(video_published_at, video_title)
+```
+```{r}
+set.seed(1234)
+sampled_yt_dt <- yt_dt %>% 
+  ungroup() %>%  # Remove grouping
+  sample_n(10000, replace = FALSE)  
+```
+The data set is so big that these parts of the code move slow, so for the purposes of memo 2 I am going to take a smaller sub sample from this data set and preprocess this.
+```{r using lubridate to see when the comments were published}
+library(lubridate)
+sampled_yt_dt <- sampled_yt_dt %>%
+  mutate(comment_published_at = ymd_hms(comment_published_at),
+         comment_day_of_week = weekdays(comment_published_at),
+         comment_hour_of_day = hour(comment_published_at))
+```
+
+```{r seeing which days had the most comments}
+sampled_yt_dt %>%
+  count(comment_day_of_week) %>%
+  arrange(desc(n))
+```
+
+```{r looking at hours with the most comments}
+# Explore the distribution of comments over hours of the day
+sampled_yt_dt %>%
+  count(comment_hour_of_day) %>%
+  arrange(desc(n))
+```
+
+The code above allows me to see which days and hours of the week have the most comments posted. The insight gained from this is practical as there might be a certain time of day that people are looking for these types of videos. Wednesdays and 6 PM seem to be the most frequent times that people comment on videos, that being said the numbers don't vary to much across each day and hour, so I doubt these would be significant differences. Also, the oldest comment in this data set is from 2006 so there might be interesting temporal analyses that can be performed regarding large moments in time (e.g., elections, pandemic).
+
+```{r using lubridate to work with when the video was published}
+sampled_yt_dt <- sampled_yt_dt %>%
+  mutate(video_published_at = ymd_hms(video_published_at),
+         video_day_of_week = weekdays(video_published_at),
+         video_hour_of_day = hour(video_published_at))
+```
+```{r visualizing the day of the week that each video was published on}
+sampled_yt_dt %>%
+  group_by(video_title, video_day_of_week) %>%
+  count() %>%
+  arrange(video_title, desc(n))
+```
+```{r visualizing the hour that each video was published on}
+sampled_yt_dt %>%
+  group_by(video_title, video_hour_of_day) %>%
+  count() %>%
+  arrange(video_title, desc(n))
+```
+
+```{r seeing which videos are the most liked by date}
+sampled_yt_dt %>%
+  mutate(video_published_at = ymd_hms(video_published_at)) %>%
+  group_by(video_published_date = as.Date(video_published_at), video_title) %>%
+  summarise(total_likes = sum(like_count)) %>%
+  arrange(desc(total_likes)) %>%
+  slice(1)
+```
+
+# Visualizing the most frequent words in the data set
+
+```{r visualizing the most frequent words in the comments}
+yt_dt %>%
+  with(wordcloud(comment, max.words = 100, scale = c(3, 0.5))) # within scale the first value pertains to the font size for the most frequent word while the second is the font size for the least frequent word
+```
+```{r visualizing the most frequent words in the video titles}
+
+yt_dt %>%
+  with(wordcloud(video_title, max.words = 100, scale = c(3, 0.5))) 
+```
+
+These word clouds are graphics that allow us to see which words are the most popular (the top 100), the scaling argument scales words based on their frequency. What we can see through both word clouds is that police is by far the most common word which makes sense, that being said brutality is popular in titles but does not even appear in the comments as the most frequent. Word clouds are helpful visuals that allow us to more easily see the pattern of words in the comments and titles of these videos.
+
+# Cleaning/Pre-processing ---
+
+
+```{r cleaning the comments for modeling later and for interpretation}
+# Preprocess the comment column in yt_dt
+sampled_yt_dt$comment_clean <- tolower(sampled_yt_dt$comment)  # Convert to lowercase
+sampled_yt_dt$comment_clean <- gsub("\\d+", "", sampled_yt_dt$comment_clean)  # Remove numbers
+sampled_yt_dt$comment_clean <- gsub("[[:punct:]]", "", sampled_yt_dt$comment_clean)  # Remove punctuation
+sampled_yt_dt$comment_clean <- removeWords(sampled_yt_dt$comment_clean, stopwords("english"))  # Remove stopwords
+sampled_yt_dt$comment_clean <- stripWhitespace(sampled_yt_dt$comment_clean)  # Remove extra whitespaces
+```
+```{r Stemming words}
+# Stemming the words in comments
+for (i in 1:nrow(sampled_yt_dt)) {
+  comment_words <- strsplit(sampled_yt_dt$comment_clean[i], " ")[[1]]  # Split the comment into individual words
+  stemmed_words <- stemDocument(comment_words)  # Find the stems of the words
+  sampled_yt_dt$comment_clean[i] <- paste(stemmed_words, collapse = " ")  # Replace the comment with the stemmed words
+}
+```
+```{r}
+# Preprocess the comment column in yt_dt
+yt_proc <- textProcessor(
+  documents = sampled_yt_dt$comment_clean,    # Specify the column containing the comments
+  metadata = sampled_yt_dt              # Include metadata if available (optional)
+)
+```
+```{r Preparing the data for modeling}
+# Extract the components from yt_proc object
+meta <- yt_proc$meta      # Extract the metadata from yt_proc
+vocab <- yt_proc$vocab    # Extract the vocabulary from yt_proc
+docs <- yt_proc$documents  # Extract the preprocessed documents from yt_proc
+
+# Prepare the documents for further analysis
+yt_out <- prepDocuments(docs, vocab, meta)
+
+# Update the variables with the modified values
+docs <- yt_out$documents  # Update the documents with the modified values from prepDocuments
+vocab <- yt_out$vocab     # Update the vocabulary with the modified values from prepDocuments
+meta <- yt_out$meta       # Update the metadata with the modified values from prepDocuments
+```
+
+All of this code is part of the data cleaning and pre-processing process. This process is pivotal for later analyses such as calculating sentiment across the comments or employing more advanced methods of statistical analysis such as structural topical modeling. For the purposes of this project memo, I will focus on cleaning and pre-processing the data for the purposes of exploratory data analysis (e.g., identifying frequent words within the comments). During the final project, I will be employing the more advanced methods of analyses. \# 
+
+Descriptive stuff ---
+
+```{r Top 25 words in this dataset}
+# But how many times does each word appear?
+sampled_yt_dt %>%
+  unnest_tokens(word, comment_clean) %>%
+  count(word, sort = TRUE) %>%
+  slice(1:25) # this is letting us the top 25 words 
+```
+
+```{r examining the most frequent words by each video}
+# Most frequent words by video:
+sampled_yt_dt %>%
+  unnest_tokens(word, comment) %>%
+  anti_join(stop_words) %>%
+  count(video_title, word, sort = TRUE) %>% 
+  group_by(video_title)
+  # filter(n > 1000) %>%
+```
+```{r pre-processing data to see top words in each comments for each video title}
+# Create a tidy text corpus
+corpus <- sampled_yt_dt %>%
+  select(video_title, comment_clean) %>%
+  unnest_tokens(word, comment_clean)
+
+# Calculate the frequency of each word
+word_freq <- corpus %>%
+  count(video_title, word, sort = TRUE)
+
+# Get the top n most frequent words for each title
+n <- 1
+top_words <- word_freq %>%
+  group_by(video_title) %>%
+  slice_max(n = n, order_by = n)
+
+# Print the top words for each title
+print(top_words)
+```
+
+```{r bigrams}
+# Create a tidy text corpus with bigrams
+corpus <- sampled_yt_dt %>%
+  select(video_title, comment_clean) %>%
+  unnest_tokens(bigram, comment_clean, token = "ngrams", n = 2)
+
+# Calculate the frequency of each bigram
+bigram_freq <- corpus %>%
+  count(video_title, bigram, sort = TRUE)
+
+# Get the top n most frequent bigrams for each title
+n <- 1
+top_bigrams <- bigram_freq %>%
+  group_by(video_title) %>%
+  slice_max(n = n, order_by = n)
+
+# Print the top bigrams for each title
+print(top_bigrams)
+```
+
+Similar to the word clouds this code allows me to see the most frequent words, but this is for the pre-processed data and the original data so I can compare and I am able to group it by video to see how the most frequent words vary as a function of the video. I am able to also see the top bi-grams by video which provides much more insight into the types of words that are being used in these videos. For example for "3 college students accuse LA County deputies of racial profiling in viral TikTok video" the top uni-gram was arrest, which is not nearly as helpful as its top bi-gram which is resist arrest. This bi-gram gives us insight into the types of conversations that are being had within this video.
+
+# Running inferential analyses to examine bi-variate relationships
+
+```{r correlation matrix examining video meta data}
+cor_matrix <- cor(sampled_yt_dt[, c("subscribers", "likes", "replies", "like_count", "comment_count", "comment_hour_of_day")])
+
+# Convert the correlation matrix to a data frame for ggplot
+cor_df <- as.data.frame(as.table(cor_matrix))
+names(cor_df) <- c("Variable1", "Variable2", "Correlation")
+
+# Plot heatmap using ggplot
+ggplot(cor_df, aes(Variable1, Variable2, fill = Correlation)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1, 1), space = "Lab",
+                       name="Correlation") +
+  geom_text(aes(label = round(Correlation, 2)), vjust = 1) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  ggtitle("Correlation Heatmap with Values")
+
+```
+
+This correlation matrix and heat map plot allows us to view some of the broader relationships between our variables. There are some interesting patterns here. For example comments with more replies also have more likes. Lie count is related to a channels subscribers, and is strongly associated with the amount of comments on the video. There are some interesting patterns here, but I am less interested in these bi-variate relationships. In my final project, I will add several variables such as sentiment and do some more complex analyses such as structural topic modeling so I can understand the text data much better.
